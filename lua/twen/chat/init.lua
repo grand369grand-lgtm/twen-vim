@@ -1,6 +1,7 @@
 --- Twen Chat - AI Chat Interface for Twen Vim
 --- Provides :Chat command to open chat window
 --- Provides :ChatSet command to configure AI providers
+--- Keymaps: <leader>ci = open chat, <leader>cs = chat settings
 
 local M = {}
 
@@ -14,6 +15,8 @@ M.state = {
   provider = nil,
   providers = {},
   config = {},
+  settings_win = nil,
+  settings_buf = nil,
 }
 
 --- Load provider definitions
@@ -148,7 +151,6 @@ function M.get_provider()
   end
   for _, p in ipairs(M.state.providers) do
     if p.id == M.state.provider then
-      -- Return a copy to prevent mutation
       return vim.deepcopy(p)
     end
   end
@@ -223,8 +225,6 @@ function M.render_history()
     end
   end
 
-  table.insert(lines, "  -- Type below and press <Enter> to send | <Esc> to close --")
-
   vim.bo[M.state.buf].modifiable = true
   vim.api.nvim_buf_set_lines(M.state.buf, 0, -1, false, lines)
   vim.bo[M.state.buf].modifiable = false
@@ -257,8 +257,6 @@ function M.send_message(message)
     end
   end
 
-  M.add_message("system", "Sending to " .. provider.name .. " ...")
-
   -- Build messages array for API (exclude system messages)
   local api_messages = {}
   for _, msg in ipairs(M.state.history) do
@@ -267,6 +265,7 @@ function M.send_message(message)
     end
   end
 
+  M.add_message("system", "Sending to " .. provider.name .. " ...")
   -- Remove the "Sending..." system message from display history
   table.remove(M.state.history)
 
@@ -276,7 +275,6 @@ end
 
 --- Call AI provider via curl
 function M.call_provider(provider, messages)
-  -- Build request body based on provider type
   local request_body
   local api_url = provider.api_url
   local headers = { "Content-Type: application/json" }
@@ -308,7 +306,7 @@ function M.call_provider(provider, messages)
       stream = false,
     })
   else
-    -- OpenAI-compatible APIs (nvidia, chatgpt, groq, mistral, deepseek, together, perplexity)
+    -- OpenAI-compatible APIs
     request_body = vim.fn.json_encode({
       model = provider.model,
       messages = messages,
@@ -329,7 +327,6 @@ function M.call_provider(provider, messages)
   table.insert(cmd, "-d")
   table.insert(cmd, request_body)
 
-  -- Execute asynchronously
   local provider_name = provider.name
   local provider_type = provider.type
 
@@ -380,7 +377,6 @@ function M.call_provider(provider, messages)
       end
     end
 
-    -- Add response in main thread
     vim.schedule(function()
       M.add_message("assistant", response_text)
     end)
@@ -407,6 +403,11 @@ function M.open_chat()
   if M.state.win and vim.api.nvim_win_is_valid(M.state.win) then
     pcall(vim.api.nvim_set_current_win, M.state.input_win)
     return
+  end
+
+  -- Make sure providers are loaded
+  if #M.state.providers == 0 then
+    M.load_config()
   end
 
   local width = math.max(40, math.floor(vim.o.columns * 0.8))
@@ -474,15 +475,20 @@ function M.open_chat()
     end
   end
 
+  -- Keymaps for input buffer (buffer-local, won't affect other buffers)
   vim.keymap.set("n", "<CR>", send_input, { buffer = M.state.input_buf, nowait = true })
   vim.keymap.set("i", "<CR>", function()
     send_input()
   end, { buffer = M.state.input_buf, nowait = true })
+  vim.keymap.set("i", "<C-CR>", function()
+    -- Insert actual newline
+    vim.api.nvim_put({ "" }, "l", false, true)
+  end, { buffer = M.state.input_buf })
   vim.keymap.set({ "n", "i" }, "<Esc>", function()
     M.close_chat()
   end, { buffer = M.state.input_buf })
 
-  -- Also set Esc on chat history window
+  -- Esc on chat history window to close
   vim.keymap.set("n", "<Esc>", function()
     M.close_chat()
   end, { buffer = M.state.buf })
@@ -498,7 +504,8 @@ function M.open_chat()
   -- Render initial history
   M.render_history()
 
-  -- Start in insert mode
+  -- Start in insert mode in input window
+  vim.api.nvim_set_current_win(M.state.input_win)
   vim.cmd("startinsert")
 end
 
@@ -506,7 +513,7 @@ end
 function M.open_settings()
   -- Load providers if not loaded
   if #M.state.providers == 0 then
-    M.load_providers()
+    M.load_config()
   end
 
   local width = math.min(70, vim.o.columns - 4)
@@ -514,13 +521,13 @@ function M.open_settings()
   local col = math.floor((vim.o.columns - width) / 2)
   local row = math.floor((vim.o.lines - height) / 2)
 
-  local set_buf = vim.api.nvim_create_buf(false, true)
-  vim.bo[set_buf].bufhidden = "wipe"
-  vim.bo[set_buf].buftype = "nofile"
-  vim.bo[set_buf].filetype = "twen-chat-settings"
-  vim.bo[set_buf].modifiable = false
+  M.state.settings_buf = vim.api.nvim_create_buf(false, true)
+  vim.bo[M.state.settings_buf].bufhidden = "wipe"
+  vim.bo[M.state.settings_buf].buftype = "nofile"
+  vim.bo[M.state.settings_buf].filetype = "twen-chat-settings"
+  vim.bo[M.state.settings_buf].modifiable = false
 
-  local set_win = vim.api.nvim_open_win(set_buf, true, {
+  M.state.settings_win = vim.api.nvim_open_win(M.state.settings_buf, true, {
     relative = "editor",
     width = width,
     height = height,
@@ -531,47 +538,51 @@ function M.open_settings()
     title = " Twen Chat - Provider Settings ",
     title_pos = "center",
   })
-  vim.wo[set_win].number = false
-  vim.wo[set_win].relativenumber = false
-  vim.wo[set_win].cursorline = true
-  vim.wo[set_win].signcolumn = "no"
+  vim.wo[M.state.settings_win].number = false
+  vim.wo[M.state.settings_win].relativenumber = false
+  vim.wo[M.state.settings_win].cursorline = true
+  vim.wo[M.state.settings_win].signcolumn = "no"
 
   -- Render settings content
-  M.render_settings(set_buf, set_win)
+  M.render_settings()
 
   -- Move cursor to first provider
-  pcall(vim.api.nvim_win_set_cursor, set_win, { 4, 0 })
+  pcall(vim.api.nvim_win_set_cursor, M.state.settings_win, { 4, 0 })
 
   -- Keymaps for settings
   local function select_provider()
-    local cursor = vim.api.nvim_win_get_cursor(set_win)
+    local cursor = vim.api.nvim_win_get_cursor(M.state.settings_win)
     local line_num = cursor[1]
-    -- Find which provider this line corresponds to
     for i, p in ipairs(M.state.providers) do
       local target_line = 3 + (i - 1) * 5 + 1
       if line_num >= target_line and line_num < target_line + 4 then
         M.state.provider = p.id
         vim.notify("Provider set to: " .. p.name, vim.log.levels.INFO)
-        M.render_settings(set_buf, set_win)
+        M.render_settings()
         break
       end
     end
   end
 
-  vim.keymap.set("n", "<CR>", select_provider, { buffer = set_buf, nowait = true })
-  vim.keymap.set("n", "x", select_provider, { buffer = set_buf, nowait = true })
+  vim.keymap.set("n", "<CR>", select_provider, { buffer = M.state.settings_buf, nowait = true })
+  vim.keymap.set("n", "x", select_provider, { buffer = M.state.settings_buf, nowait = true })
   vim.keymap.set("n", "<Esc>", function()
-    vim.api.nvim_win_close(set_win, true)
-  end, { buffer = set_buf, nowait = true })
+    vim.api.nvim_win_close(M.state.settings_win, true)
+  end, { buffer = M.state.settings_buf, nowait = true })
   vim.keymap.set("n", "<C-s>", function()
     M.save_config()
     vim.notify("Twen Chat settings saved!", vim.log.levels.INFO)
-    vim.api.nvim_win_close(set_win, true)
-  end, { buffer = set_buf, nowait = true })
+    vim.api.nvim_win_close(M.state.settings_win, true)
+  end, { buffer = M.state.settings_buf, nowait = true })
 end
 
 --- Render settings content
-function M.render_settings(buf, win)
+function M.render_settings()
+  local buf = M.state.settings_buf
+  if not buf or not vim.api.nvim_buf_is_valid(buf) then
+    return
+  end
+
   local current = M.state.provider
   local lines = {}
   table.insert(lines, "  Select an AI Provider:")
@@ -604,6 +615,7 @@ end
 
 --- Setup function - called on Neovim startup
 function M.setup()
+  -- Load config and providers
   M.load_config()
 
   -- Create :Chat command
@@ -616,8 +628,14 @@ function M.setup()
     M.open_settings()
   end, { desc = "Configure Twen Chat AI Provider" })
 
-  -- Add keymap: <leader>c to open chat
-  vim.keymap.set("n", "<leader>c", ":Chat<CR>", { desc = "Twen Chat", silent = true })
+  -- Keymaps: <leader>ci = open chat, <leader>cs = chat settings
+  vim.keymap.set("n", "<leader>ci", function()
+    M.open_chat()
+  end, { desc = "Twen Chat", silent = true })
+
+  vim.keymap.set("n", "<leader>cs", function()
+    M.open_settings()
+  end, { desc = "Twen Chat Settings", silent = true })
 end
 
 return M

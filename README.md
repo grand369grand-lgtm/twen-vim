@@ -66,7 +66,14 @@ Twen Vim includes a built-in AI chat interface with multi-provider support.
 | `:Chat` | Open chat window |
 | `:ChatSet` | Configure AI provider settings |
 
-### Chat Keybindings
+### Keymaps
+
+| Key | Action |
+|-----|--------|
+| `<leader>ci` | Open Twen Chat |
+| `<leader>cs` | Open Chat Settings |
+
+### Chat Window Keybindings
 
 | Key | Action |
 |-----|--------|

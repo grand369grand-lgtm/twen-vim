@@ -45,6 +45,7 @@ return {
       -- Footer
       dashboard.section.footer.val = {
         "  Twen Vim  -  Your AI-powered Neovim IDE",
+        "  <leader>ci = Chat  |  <leader>cs = Settings",
       }
       dashboard.section.footer.opts.hl = "Comment"
 

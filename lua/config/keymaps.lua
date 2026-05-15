@@ -14,5 +14,11 @@ vim.keymap.set("n", "<C-Down>", "<cmd>resize -2<cr>", { desc = "Decrease window 
 vim.keymap.set("n", "<C-Left>", "<cmd>vertical resize -2<cr>", { desc = "Decrease window width" })
 vim.keymap.set("n", "<C-Right>", "<cmd>vertical resize +2<cr>", { desc = "Increase window width" })
 
--- Clear search highlighting
-vim.keymap.set("n", "<Esc>", "<cmd>noh<cr><Esc>", { desc = "Clear search highlighting" })
+-- Clear search highlighting (only when not in a chat floating window)
+vim.keymap.set("n", "<Esc>", function()
+  -- Don't override Esc in twen-chat buffers
+  if vim.bo.filetype == "twen-chat" or vim.bo.filetype == "twen-chat-input" or vim.bo.filetype == "twen-chat-settings" then
+    return
+  end
+  vim.cmd("noh")
+end, { desc = "Clear search highlighting" })
