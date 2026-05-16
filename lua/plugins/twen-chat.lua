@@ -1,15 +1,27 @@
 -- Twen Chat Plugin - AI Chat Interface for Twen Vim
--- :Chat   - Open chat window
--- :ChatSet - Configure AI provider
+-- This file documents the chat features.
+-- The actual implementation lives in lua/twen/chat/init.lua
+-- and is loaded automatically by init.lua on startup.
 --
--- The chat module is loaded directly in init.lua (not via lazy.nvim plugin spec)
--- to avoid lazy.nvim trying to clone a non-existent remote repository.
--- This file is kept for documentation purposes only.
+-- Commands:
+--   :Chat       Open AI chat window (top: history, bottom: input)
+--   :ChatSet    Configure AI provider settings
 --
--- Keymaps:
+-- Keymaps (after setup):
 --   <leader>ci  Open Twen Chat
 --   <leader>cs  Open Chat Settings
 --
--- Commands:
---   :Chat       Open chat window
---   :ChatSet    Configure AI provider
+-- Chat window controls:
+--   Enter       Send message
+--   Ctrl+J      Insert new line (multiline input)
+--   Esc         Close chat
+--
+-- Settings controls:
+--   j/k         Navigate providers
+--   x/Enter     Select provider
+--   Ctrl+s      Save and close
+--   Esc/q       Close without saving
+--
+-- Supported providers:
+--   NVIDIA NIM, Claude, ChatGPT, Gemini, Groq, Mistral,
+--   DeepSeek, Ollama, Together AI, Perplexity AI
