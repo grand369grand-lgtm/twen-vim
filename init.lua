@@ -1,18 +1,17 @@
 -- bootstrap lazy.nvim, LazyVim and your plugins
 require("config.lazy")
 
--- Load Twen Chat module (ensure :Chat and :ChatSet commands are available)
--- This is a fallback - the plugin spec in lua/plugins/twen-chat.lua also loads it
+-- Load Twen Chat module directly (not as a lazy.nvim plugin)
+-- This ensures :Chat and :ChatSet commands are available after startup
 vim.api.nvim_create_autocmd("User", {
   pattern = "VeryLazy",
   once = true,
   callback = function()
-    -- Only setup if commands don't already exist (avoid double setup)
-    if not vim.api.nvim_get_commands({})["Chat"] then
-      local ok, chat = pcall(require, "twen.chat")
-      if ok then
-        chat.setup()
-      end
+    local ok, chat = pcall(require, "twen.chat")
+    if ok then
+      chat.setup()
+    else
+      vim.notify("Twen Chat: Failed to load module - " .. (select(2, pcall(require, "twen.chat")) or "unknown error"), vim.log.levels.WARN)
     end
   end,
 })
